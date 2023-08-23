@@ -8,8 +8,8 @@ fi
 # settable variables
 : ${VERBOSITY:=0}
 : ${NET_FAIL_LOG:=/var/log/network-failures.log}
-: ${known_pingz:=( '1.1.1.1' '8.8.8.8' '8.8.4.4' 'apple.com' 'microsoft.com' )}
-: ${local_pingz:=( 'google.com' )}
+: ${known_pingz:=('microsoft.com')}
+: ${local_pingz:=('google.com')}
 : ${BAD_IPS:=/var/log/.bad_ips}
 : ${this_class_c:="10.0.0"}
 
