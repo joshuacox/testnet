@@ -13,6 +13,7 @@ fi
 : ${VERBOSITY:=0}
 : ${NET_FAIL_LOG:=/var/log/network-failures.log}
 : ${BAD_IPS:=/var/log/.bad_ips}
+: ${GOOD_IPS:=/var/log/.good_ips}
 if [[ -z $this_class_c ]]; then
     echo 'this_class_c is not set'
     echo 'this_class_c is not set' >> /var/log/network-failures.log
@@ -29,8 +30,10 @@ if [[ -z $local_pingz ]]; then
     local_pingz=('google.com')
 fi
 
+TMP=$(mktemp -d)
 #functions
 cleanup () {
+  rmdir $TMP
   THEN=$(date +'%s')
   phrase=$(printf '%s took %s seconds ' "$0" "$(($THEN - $NOW))")
   squawk 3 "$phrase"
@@ -72,13 +75,15 @@ squawk () {
 test () {
   ping $ping_timeout_flag 1 -c 1 $1 &>/dev/null
   if [[ $? -eq 0 ]]; then
-    phrase=$(printf '%s\tgood' $i)
+    phrase=$(printf '%s\tgood' $1)
+    echo -n "$1," >> $GOOD_IPS
+    date +%Y-%m-%d-%H:%M:%S,%s     >> $GOOD_IPS
     squawk 2 "$phrase"
     exit 0
   else
-    phrase=$(printf '%s\tbad' $i)
+    phrase=$(printf '%s\tbad' $1)
     squawk 1 "$phrase"
-    echo "$i" >> $BAD_IPS
+    echo "$1" >> $BAD_IPS
    ((++count)) 
   fi 
 }
@@ -92,6 +97,17 @@ touchr () {
       exit 1
     fi
   fi
+}
+
+loop_pingz () {
+  count=0
+  for i in "${pingz[@]}"
+  do
+    if [[ $count -lt 15 ]];then
+      test $i
+      squawk 5 "$i"
+    fi
+  done
 }
 
 # Randomly permute the arguments and put them in array 'pingz'
@@ -129,31 +145,58 @@ else
 fi
 
 touchr $BAD_IPS
+touchr $GOOD_IPS
 touchr $NET_FAIL_LOG
-touchr /tmp/testnet_log
-#date +%Y-%m-%d-%H:%M:%S-%s    | tee -a /tmp/testnet_log
-BAD_IPS_COUNT=$(wc -l $BAD_IPS|awk '{print $1}')
+
+count=0
+while [[ $count -lt 3 ]]; do
+  rand1=$(( RANDOM % 254 ))
+  rand2=$(( RANDOM % 254 ))
+  rand3=$(( RANDOM % 254 ))
+  rand4=$(( RANDOM % 254 ))
+  test "$rand1.$rand2.$rand3.$rand4"
+done
+
+BAD_IPS_COUNT=$(grep $this_class_c $BAD_IPS|wc -l|awk '{print $1}')
 if [[ $BAD_IPS_COUNT -gt 225 ]]; then
-  echo clearing $BAD_IPS
-  cat $BAD_IPS >> $BAD_IPS.historical
-  rm -v $BAD_IPS
+  squawk 7 "clearing $BAD_IPS"
+  grep -v $this_class_c $BAD_IPS | sort | uniq >> $TMP/bad_ips
+  mv $TMP/bad_ips $BAD_IPS
   touch $BAD_IPS
 fi
 
-# slurp bad ips into an array
+
+touch $TMP/good_ips
+while IFS="," read -r goodip gooddate goodepoch
+do
+  echo "$goodip" >> $TMP/good_ips
+  good_pingz+=("$goodip")
+done < <(cat $GOOD_IPS)
+sort $TMP/good_ips|uniq > $TMP/good_uniq_ips
+rm $TMP/good_ips
+
+# slurp ips into an arrays
+for i in $(cat $TMP/good_uniq_ips)
+do
+ both_ips_array+=("$i")
+ good_pingz+=("$i")
+done
+rm $TMP/good_uniq_ips
 for i in $(cat $BAD_IPS)
 do
+ both_ips_array+=("$i")
  bad_ips_array+=("$i")
 done
 
 # convert array into associative array
 declare -A map    # required: declare explicit associative array
-for key in "${!bad_ips_array[@]}"; do map[${bad_ips_array[$key]}]="$key"; done  # see below
+#for key in "${!bad_ips_array[@]}"; do map[${bad_ips_array[$key]}]="$key"; done  # see below
+for key in "${!both_ips_array[@]}"; do map[${both_ips_array[$key]}]="$key"; done  # see below
 for i in {2..254};do
   this_ip="${this_class_c}.${i}"
   if [[ -n "${map[$this_ip]}" ]]; then
     continue
-    #echo $this_ip known bad
+    #echo $this_ip known
   else
     local_pingz+=("$this_ip")
   fi
@@ -166,25 +209,15 @@ phrase=$(printf 'The for loop took %s seconds \n' "$DateDiff")
 squawk 6 "The for loop took $DateDiff seconds"
 
 # test 15 of our local pings
-count=0
 perm "${local_pingz[@]}"
 # perm results in a shuffled array "pingz"
-for i in "${pingz[@]}"
-do
-  if [[ $count -lt 15 ]];then
-    test $i
-    squawk 5 "$i"
-  fi
-done
-
+loop_pingz
 # test known good pings
+perm "${good_pingz[@]}"
+loop_pingz
+# test widely known pings
 perm "${known_pingz[@]}"
-# perm results in a shuffled array "pingz"
-for i in "${pingz[@]}"
-do
-  test $i
-  squawk 4 "$i"
-done
+loop_pingz
 
 # If both of those for loops passed network is not pinging
 # log the failure with some details
