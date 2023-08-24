@@ -1,22 +1,39 @@
 #!/usr/bin/env bash
 NOW=$(date +'%s')
 
-: ${CONFIG_FILE:=$HOME/.testnet}
-if [[ -f $HOME/.testnet ]]; then
+: ${CONFIG_FILE:=/root/.testnet}
+if [[ -f $CONFIG_FILE ]]; then
   . $CONFIG_FILE
+else
+  echo "$CONFIG_FILE not found" 
+  echo "$CONFIG_FILE not found" >> /var/log/network-failures.log
+  exit 1
 fi
 # settable variables
 : ${VERBOSITY:=0}
 : ${NET_FAIL_LOG:=/var/log/network-failures.log}
-: ${known_pingz:=('microsoft.com')}
-: ${local_pingz:=('google.com')}
 : ${BAD_IPS:=/var/log/.bad_ips}
-: ${this_class_c:="10.0.0"}
+if [[ -z $this_class_c ]]; then
+    echo 'this_class_c is not set'
+    echo 'this_class_c is not set' >> /var/log/network-failures.log
+    exit 1
+fi
+if [[ -z $known_pingz ]]; then
+    known_pingz=('1.1.1.1')
+    known_pingz+=('8.8.8.8')
+    known_pingz+=('8.8.4.4')
+    known_pingz+=('apple.com')
+    known_pingz+=('microsoft.com')
+fi
+if [[ -z $local_pingz ]]; then
+    local_pingz=('google.com')
+fi
 
 #functions
 cleanup () {
   THEN=$(date +'%s')
-  squawk 1 "$0 took $(($THEN - $NOW)) seconds "
+  phrase=$(printf '%s took %s seconds ' "$0" "$(($THEN - $NOW))")
+  squawk 3 "$phrase"
 }
 trap cleanup EXIT
 
@@ -39,12 +56,15 @@ squawk () {
         printf '#'
         ((++count_squawk))
       done
-      printf ' %s\n' "$squawk"
+      printf '\t'
+      printf "$squawk"
+      printf '\n'
     else
       printf '#>{ '
       printf '%s' "$squawk_lvl"
       printf ' }<# '
-      printf ' %s\n' "$squawk"
+      printf "$squawk"
+      printf '\n'
     fi
   fi
 }
@@ -52,10 +72,12 @@ squawk () {
 test () {
   ping $ping_timeout_flag 1 -c 1 $1 &>/dev/null
   if [[ $? -eq 0 ]]; then
-    squawk 2 $i good
+    phrase=$(printf '%s\tgood' $i)
+    squawk 2 "$phrase"
     exit 0
   else
-    squawk 2 $i bad
+    phrase=$(printf '%s\tbad' $i)
+    squawk 1 "$phrase"
     echo "$i" >> $BAD_IPS
    ((++count)) 
   fi 
@@ -108,6 +130,8 @@ fi
 
 touchr $BAD_IPS
 touchr $NET_FAIL_LOG
+touchr /tmp/testnet_log
+#date +%Y-%m-%d-%H:%M:%S-%s    | tee -a /tmp/testnet_log
 BAD_IPS_COUNT=$(wc -l $BAD_IPS|awk '{print $1}')
 if [[ $BAD_IPS_COUNT -gt 225 ]]; then
   echo clearing $BAD_IPS
@@ -137,7 +161,9 @@ done
 
 # note some perf data
 THEN=$(date +'%s')
-squawk 5 "The for loop took $(($THEN - $NOW)) seconds "
+DateDiff=$(($THEN - $NOW))
+phrase=$(printf 'The for loop took %s seconds \n' "$DateDiff")
+squawk 6 "The for loop took $DateDiff seconds"
 
 # test 15 of our local pings
 count=0
@@ -147,7 +173,7 @@ for i in "${pingz[@]}"
 do
   if [[ $count -lt 15 ]];then
     test $i
-    squawk 10 $i
+    squawk 5 "$i"
   fi
 done
 
@@ -157,15 +183,21 @@ perm "${known_pingz[@]}"
 for i in "${pingz[@]}"
 do
   test $i
-  squawk 10 $i
+  squawk 4 "$i"
 done
 
 # If both of those for loops passed network is not pinging
 # log the failure with some details
+echo '__________________________________________' >> ${NET_FAIL_LOG}
+ifconfig                       >> ${NET_FAIL_LOG}
 echo -n 'Network failure at: ' >> ${NET_FAIL_LOG}
-date +%Y-%m-%d-%H:%M:%S-%s >> ${NET_FAIL_LOG}
-ifconfig >> ${NET_FAIL_LOG}
+date +%Y-%m-%d-%H:%M:%S-%s     >> ${NET_FAIL_LOG}
+ifconfig
+echo -n 'Network failure at: '
+date +%Y-%m-%d-%H:%M:%S-%s
 
 # only reboot if all pings fail
+echo reboot >> ${NET_FAIL_LOG}
+echo "NET_FAIL_LOG ${NET_FAIL_LOG}" >> ${NET_FAIL_LOG}
 reboot
 exit 1
