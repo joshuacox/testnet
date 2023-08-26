@@ -12,8 +12,6 @@ Ugly I know. But it just keeps evolving.  I am certain that one day this will ev
 1. `make install`
 1. copy example.testnet to ~/.testnet
 1. edit it
-1. replace exaple.com with your domain or a known one that pings
-1. replace the 10 dot addresses with your own.
+1. replace example.com with your domain or a known one that pings
+1. replace the 10.x.x.x addresses with your own.
 1. Pay special attention to the `this_class_c` variable and make that a class c network that is close to your network.
-
-
