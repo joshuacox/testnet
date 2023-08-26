@@ -1,0 +1,13 @@
+known_pingz=('10.0.0.1')
+known_pingz+=('10.0.1.1')
+local_pingz=('example.com')
+this_class_c='10.0.0'
+
+# these variables
+# can still be overridden 
+# by environment 
+# when set this way
+: ${VERBOSITY:=1000}
+: ${NET_FAIL_LOG:=/var/log/network-failures.log}
+: ${BAD_IPS:=/var/log/.bad_ips}
+: ${GOOD_IPS:=/var/log/.good_ips}
